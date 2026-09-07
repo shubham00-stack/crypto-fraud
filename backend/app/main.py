@@ -12,6 +12,7 @@ used anywhere in this demo.
 """
 from __future__ import annotations
 
+import os
 import re
 import uuid
 from datetime import datetime, timezone
@@ -30,13 +31,18 @@ ALLOWED_HOPS = {3, 4, 5}
 
 app = FastAPI(title="Crypto Fraud Attribution MVP")
 
+allowed_origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "https://crypto-fraud.vercel.app",
+]
+extra_origins = os.getenv("CORS_ORIGINS", "")
+if extra_origins:
+    allowed_origins.extend(origin.strip() for origin in extra_origins.split(",") if origin.strip())
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "https://crypto-fraud.vercel.app",
-    ],
+    allow_origins=allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
