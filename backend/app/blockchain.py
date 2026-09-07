@@ -50,11 +50,18 @@ class DemoBlockchainProvider:
         seed = f"{wallet}:{blockchain}:{max_hops}"
         rng_seed = _seed_int(seed)
 
-        # Hop 1 always fragments into two branches: this both demonstrates
-        # "fund fragmentation" and gives the trace two independent paths to
-        # follow, one of which terminates at a known exchange address.
-        branch_count = 2
+        # Derive several independent, wallet-specific decisions from the
+        # hash so different addresses produce genuinely different cases
+        # (branch count, fan-out timing, and exchange outcome), instead of
+        # always reproducing the same fixed "textbook" trace shape.
+        fragments = (rng_seed // 7) % 5 != 0  # ~80% of wallets fragment funds
+        branch_count = 2 if fragments else 1
         hops_per_branch = max(max_hops - 1, 2)
+
+        is_rapid = (rng_seed // 11) % 3 != 0  # ~67% of wallets move funds rapidly
+        fan_out_gap_seconds = 12 + (rng_seed % 25) if is_rapid else 90 + (rng_seed % 400)
+
+        reaches_exchange = (rng_seed // 17) % 4 != 0  # ~75% of wallets hit a known exchange
 
         base_time = datetime.now(timezone.utc) - timedelta(minutes=7 * (max_hops + 1))
 
@@ -77,9 +84,10 @@ class DemoBlockchainProvider:
         exchange_wallet = None
 
         for b, addr in enumerate(first_hop_addresses):
-            # Keep the two fan-out transfers close together (well under a
-            # minute apart) so the "rapid fund movement" indicator fires.
-            current_time = base_time + timedelta(seconds=25 * (b + 1))
+            # Space consecutive fan-out transfers by a wallet-specific gap:
+            # a short gap fires the "rapid fund movement" indicator, a long
+            # one does not.
+            current_time = base_time + timedelta(seconds=fan_out_gap_seconds * (b + 1))
             tx_index += 1
             transactions.append(
                 Transaction(
@@ -114,10 +122,11 @@ class DemoBlockchainProvider:
             branch_seed = f"{seed}:branch:{b}"
             for hop in range(1, hops_per_branch):
                 is_last_hop = hop == hops_per_branch - 1
-                # The first branch's final hop lands on a known exchange
-                # deposit address; the second branch terminates at an
-                # unlabeled wallet, which is a realistic mixed outcome.
-                if is_last_hop and b == 0:
+                # Only wallets where `reaches_exchange` is true have their
+                # first branch's final hop land on a known exchange deposit
+                # address; others terminate at an unlabeled wallet instead,
+                # so not every trace ends in a VASP hit.
+                if is_last_hop and b == 0 and reaches_exchange:
                     next_addr = _derive_address(branch_seed, 900)
                     exchange_wallet = next_addr
                     node_type = "exchange"
